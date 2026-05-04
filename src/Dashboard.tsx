@@ -10,8 +10,7 @@ import {
   Gauge, Droplets, PanelLeftClose, PanelLeftOpen,
   SunMedium, MoonStar, Footprints, Zap, TrendingUp,
 } from 'lucide-react'
-import { computeTrends, computeExtraTrends, groupedAverage, workoutSummary, monthlyWorkouts } from './analysis'
-import type { ExtraTrendInput } from './analysis'
+import { groupedAverage, workoutSummary, monthlyWorkouts } from './analysis'
 import { COLORS, chartMargin, StatBox, ChartCard, SectionHeader, TabHeader, ChartTooltip, shortDateCompact, shortMonth, fmt, humanizeWorkoutType, useChartTheme, TabSkeleton, EmptyState } from './ui'
 
 const TrainingViewer = lazy(() => import('./TrainingViewer'))
@@ -26,7 +25,7 @@ const RouteComparison = lazy(() => import('./RouteComparison'))
 const YearInReview = lazy(() => import('./YearInReview'))
 const CalendarHeatmap = lazy(() => import('./CalendarHeatmap'))
 const HealthScoreView = lazy(() => import('./HealthScoreView'))
-const AnomalyDetection = lazy(() => import('./AnomalyDetection'))
+const Trends = lazy(() => import('./Trends'))
 const AIInsights = lazy(() => import('./AIInsights'))
 const MenstrualCycle = lazy(() => import('./MenstrualCycle'))
 const GarminTraining = lazy(() => import('./GarminTraining'))
@@ -175,51 +174,6 @@ export default function Dashboard({ data, onReset }: { data: HealthData; onReset
     return allMetrics.filter(m => m.date >= cutoffDate)
   }, [allMetrics, cutoffDate])
 
-  const trends = useMemo(() => {
-    const base = computeTrends(allMetrics, 30)
-
-    const extras: ExtraTrendInput[] = []
-
-    // VO2 Max
-    const vo2 = data.cardioRecords.filter(r => r.type === 'vo2max')
-    if (vo2.length > 0) extras.push({ metric: 'VO2 Max', unit: 'mL/kg/min', higherIsGood: true, data: vo2.map(r => ({ date: r.date, value: r.value })) })
-
-    // Walking HR
-    const whr = data.cardioRecords.filter(r => r.type === 'walkingHR')
-    if (whr.length > 0) extras.push({ metric: 'Walking HR', unit: 'bpm', higherIsGood: false, data: whr.map(r => ({ date: r.date, value: r.value })) })
-
-    // SpO2
-    const spo2 = data.dailyBreathing.filter(d => d.spo2 !== null)
-    if (spo2.length > 0) extras.push({ metric: 'Blood Oxygen', unit: '%', higherIsGood: true, data: spo2.map(d => ({ date: d.date, value: d.spo2 })) })
-
-    // Breathing disturbances
-    const dist = data.dailyBreathing.filter(d => d.disturbances !== null)
-    if (dist.length > 0) extras.push({ metric: 'Breathing Disturbances', unit: '/hr', higherIsGood: false, data: dist.map(d => ({ date: d.date, value: d.disturbances })) })
-
-    // Respiratory rate
-    const rr = data.dailyBreathing.filter(d => d.respiratoryRate !== null)
-    if (rr.length > 0) extras.push({ metric: 'Respiratory Rate', unit: 'br/min', higherIsGood: false, data: rr.map(d => ({ date: d.date, value: d.respiratoryRate })) })
-
-    // Daylight
-    if (data.dailyDaylight.length > 0) extras.push({ metric: 'Daylight', unit: 'min', higherIsGood: true, data: data.dailyDaylight.map(d => ({ date: d.date, value: d.minutes })) })
-
-    // Headphone exposure
-    const hp = data.dailyAudio.filter(d => d.headphoneAvg !== null)
-    if (hp.length > 0) extras.push({ metric: 'Headphone Level', unit: 'dB', higherIsGood: false, data: hp.map(d => ({ date: d.date, value: d.headphoneAvg })) })
-
-    // Weight
-    const wt = data.bodyRecords.filter(r => r.weight !== null)
-    if (wt.length > 0) extras.push({ metric: 'Weight', unit: 'kg', higherIsGood: false, data: wt.map(r => ({ date: r.date, value: r.weight })) })
-
-    const extra = computeExtraTrends(extras, 30)
-    return [...base, ...extra].sort((a, b) => b.changePercent - a.changePercent)
-  }, [allMetrics, data])
-
-  const trendFor = (metric: string) => {
-    const t = trends.find(t => t.metric === metric)
-    return t ? { direction: t.direction, positive: t.positive, changePercent: t.changePercent } : undefined
-  }
-
   const stepsData = useMemo(() => groupedAverage(filteredMetrics, 'steps', granularity), [filteredMetrics, granularity])
   const hrData = useMemo(() => groupedAverage(filteredMetrics, 'restingHeartRate', granularity), [filteredMetrics, granularity])
   const hrvData = useMemo(() => groupedAverage(filteredMetrics, 'hrv', granularity), [filteredMetrics, granularity])
@@ -241,51 +195,6 @@ export default function Dashboard({ data, onReset }: { data: HealthData; onReset
 
   // Spark data for overview stat boxes
   const sparkFor = (key: keyof DailyMetrics) => recent30.map(m => m[key] as number).filter(v => v !== null && v > 0)
-
-  // Highlights for overview
-  const highlights = useMemo(() => {
-    const items: { icon: string; text: string; color: string }[] = []
-
-    // Best trend
-    const bestTrend = trends.find(t => t.positive && t.changePercent > 0)
-    if (bestTrend) items.push({ icon: '📈', text: `${bestTrend.metric} improved ${bestTrend.changePercent}% over the last 30 days`, color: 'text-green-400' })
-
-    // Worst trend
-    const worstTrend = [...trends].reverse().find(t => !t.positive && t.changePercent > 5)
-    if (worstTrend) items.push({ icon: '📉', text: `${worstTrend.metric} declined ${worstTrend.changePercent}% — worth keeping an eye on`, color: 'text-red-400' })
-
-    // Step streak
-    const stepStreak = (() => {
-      let streak = 0
-      for (let i = allMetrics.length - 1; i >= 0; i--) {
-        if (allMetrics[i].steps >= 10000) streak++
-        else break
-      }
-      return streak
-    })()
-    if (stepStreak >= 3) items.push({ icon: '🔥', text: `${stepStreak}-day streak of 10,000+ steps`, color: 'text-orange-400' })
-
-    // Sleep consistency
-    if (avgSleep !== null && avgSleep >= 7.5) items.push({ icon: '😴', text: `Averaging ${avgSleep.toFixed(1)}h sleep — meeting the recommended 7-9h target`, color: 'text-cyan-400' })
-    else if (avgSleep !== null && avgSleep < 6.5) items.push({ icon: '⚠️', text: `Only ${avgSleep.toFixed(1)}h avg sleep — below the recommended minimum of 7h`, color: 'text-red-400' })
-
-    // Best workout week
-    if (workoutsByMonth.length > 0) {
-      const lastMonth = workoutsByMonth[workoutsByMonth.length - 1]
-      const prevMonth = workoutsByMonth.length > 1 ? workoutsByMonth[workoutsByMonth.length - 2] : null
-      if (prevMonth && lastMonth.count > prevMonth.count) {
-        items.push({ icon: '💪', text: `${lastMonth.count} workouts this month — up from ${prevMonth.count} last month`, color: 'text-blue-400' })
-      }
-    }
-
-    // Resting HR milestone
-    if (avgHR !== null && avgHR <= 60) items.push({ icon: '❤️', text: `Resting HR at ${Math.round(avgHR)} bpm — athlete-level cardiovascular fitness`, color: 'text-green-400' })
-
-    // VO2 Max
-    if (latestVO2 !== null && latestVO2 >= 45) items.push({ icon: '🫁', text: `VO2 Max at ${latestVO2.toFixed(1)} — above average cardiorespiratory fitness`, color: 'text-green-400' })
-
-    return items.slice(0, 5) // Max 5 highlights
-  }, [trends, allMetrics, avgSleep, workoutsByMonth, avgHR, latestVO2])
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
@@ -596,50 +505,18 @@ export default function Dashboard({ data, onReset }: { data: HealthData; onReset
 
         {tab === 'overview' && <>
         {/* Key Metrics */}
-        <TabHeader title="Overview" description="Your health at a glance — key metrics, recent highlights, and trends from the last 30 days." />
+        <TabHeader title="Overview" description="Your health at a glance — key metrics and trend movement across multiple windows." />
         <SectionHeader>At a Glance</SectionHeader>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-8 gap-3">
-          <StatBox label="Steps" value={fmt(avgSteps)} unit="/day" trend={trendFor('Steps')} sub="30d avg" color={COLORS.blue} sparkData={sparkFor('steps')} />
-          <StatBox label="Sleep" value={fmt(avgSleep, 1)} unit="hrs" trend={trendFor('Sleep')} sub="30d avg" color={COLORS.cyan} sparkData={sparkFor('sleepHours')} />
-          <StatBox label="Resting HR" value={fmt(avgHR, 0)} unit="bpm" trend={trendFor('Resting Heart Rate')} sub="30d avg" color={COLORS.red} sparkData={sparkFor('restingHeartRate')} />
-          <StatBox label="HRV" value={fmt(avgHRV, 0)} unit="ms" trend={trendFor('Heart Rate Variability')} sub="30d avg" color={COLORS.purple} sparkData={sparkFor('hrv')} />
-          <StatBox label="Weight" value={fmt(latestWeight, 1)} unit="kg" trend={trendFor('Weight')} sub="Latest" color={COLORS.orange} sparkData={sparkFor('weight')} />
-          <StatBox label="VO2 Max" value={fmt(latestVO2, 1)} unit="mL/kg/min" trend={trendFor('VO2 Max')} sub="Latest" color={COLORS.green} sparkData={sparkFor('vo2max')} />
-          <StatBox label="Distance" value={fmt(avgMetric(recent30, 'distance'), 1)} unit="km/day" trend={trendFor('Distance')} sub="30d avg" color={COLORS.green} sparkData={sparkFor('distance')} />
+          <StatBox label="Steps" value={fmt(avgSteps)} unit="/day" sub="30d avg" color={COLORS.blue} sparkData={sparkFor('steps')} />
+          <StatBox label="Sleep" value={fmt(avgSleep, 1)} unit="hrs" sub="30d avg" color={COLORS.cyan} sparkData={sparkFor('sleepHours')} />
+          <StatBox label="Resting HR" value={fmt(avgHR, 0)} unit="bpm" sub="30d avg" color={COLORS.red} sparkData={sparkFor('restingHeartRate')} />
+          <StatBox label="HRV" value={fmt(avgHRV, 0)} unit="ms" sub="30d avg" color={COLORS.purple} sparkData={sparkFor('hrv')} />
+          <StatBox label="Weight" value={fmt(latestWeight, 1)} unit="kg" sub="Latest" color={COLORS.orange} sparkData={sparkFor('weight')} />
+          <StatBox label="VO2 Max" value={fmt(latestVO2, 1)} unit="mL/kg/min" sub="Latest" color={COLORS.green} sparkData={sparkFor('vo2max')} />
+          <StatBox label="Distance" value={fmt(avgMetric(recent30, 'distance'), 1)} unit="km/day" sub="30d avg" color={COLORS.green} sparkData={sparkFor('distance')} />
           <StatBox label="Workouts" value={`${totalWorkouts}`} unit="total" sub={`${workoutsByMonth.length > 0 ? workoutsByMonth[workoutsByMonth.length - 1]?.count || 0 : 0} this month`} />
         </div>
-
-        {/* Highlights */}
-        {highlights.length > 0 && (
-          <>
-            <SectionHeader>Highlights</SectionHeader>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {highlights.map((h, i) => (
-                <div key={i} className="flex items-start gap-3 bg-zinc-900 rounded-xl border border-zinc-800 px-4 py-3">
-                  <span className="text-lg shrink-0 mt-0.5">{h.icon}</span>
-                  <p className={`text-xs leading-relaxed ${h.color}`}>{h.text}</p>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* Trends grid */}
-        {trends.length > 0 && (
-          <>
-            <SectionHeader>30-Day Trends</SectionHeader>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-2">
-              {trends.map(t => (
-                <div key={t.metric} className="flex items-center justify-between bg-zinc-900 rounded-lg border border-zinc-800 px-3 py-2">
-                  <span className="text-xs text-zinc-400 truncate mr-2">{t.metric}</span>
-                  <span className={`text-xs font-medium tabular-nums whitespace-nowrap ${t.positive ? 'text-green-400' : 'text-red-400'}`}>
-                    {t.direction === 'up' ? '+' : '−'}{t.changePercent}%
-                  </span>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
 
         {/* Key charts */}
         <SectionHeader>Charts</SectionHeader>
@@ -787,9 +664,9 @@ export default function Dashboard({ data, onReset }: { data: HealthData; onReset
           </>
         )}
 
-        {/* Anomalies + AI Insights inlined into Overview */}
+        {/* Trends + AI Insights inlined into Overview */}
         <Suspense fallback={Loading}>
-          <AnomalyDetection data={data} metrics={allMetrics} />
+          <Trends data={data} metrics={allMetrics} />
         </Suspense>
         <Suspense fallback={Loading}>
           <AIInsights data={data} metrics={allMetrics} />

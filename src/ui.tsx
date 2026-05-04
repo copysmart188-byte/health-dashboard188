@@ -122,12 +122,12 @@ export function ChartTooltip({ active, payload, label, formatter }: {
 }
 
 // === Sparkline ===
-function Sparkline({ data, color, height = 24 }: { data: number[]; color?: string; height?: number }) {
+export function Sparkline({ data, color, height = 24, width = 80 }: { data: number[]; color?: string; height?: number; width?: number }) {
   if (data.length < 2) return null
   const min = Math.min(...data)
   const max = Math.max(...data)
   const range = max - min || 1
-  const w = 80
+  const w = width
   const h = height
   const pad = 2
   const points = data.map((v, i) => {
