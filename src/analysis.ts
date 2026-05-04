@@ -88,7 +88,7 @@ export interface MultiWindowTrend {
 
 export function computeMultiWindowTrends(
   inputs: MultiWindowInput[],
-  windows: number[] = [7, 14, 30, 90],
+  windows: number[] = [7, 14, 30],
 ): MultiWindowTrend[] {
   const out: MultiWindowTrend[] = []
   for (const { metric, unit, higherIsGood, category, data } of inputs) {
