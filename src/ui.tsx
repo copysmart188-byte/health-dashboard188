@@ -122,12 +122,13 @@ export function ChartTooltip({ active, payload, label, formatter }: {
 }
 
 // === Sparkline ===
-export function Sparkline({ data, color, height = 24, width = 80, fluid = false, showEndDot = true }: {
+export function Sparkline({ data, color, height = 24, width = 80, fluid = false, showEndDot = true, min: minOverride, max: maxOverride }: {
   data: number[]; color?: string; height?: number; width?: number; fluid?: boolean; showEndDot?: boolean
+  min?: number; max?: number
 }) {
   if (data.length < 2) return null
-  const min = Math.min(...data)
-  const max = Math.max(...data)
+  const min = minOverride ?? Math.min(...data)
+  const max = maxOverride ?? Math.max(...data)
   const range = max - min || 1
   const w = width
   const h = height

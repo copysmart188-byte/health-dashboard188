@@ -117,6 +117,14 @@ function TrendArrow({ direction }: { direction: MultiWindowRow['direction'] }) {
 
 function TrendCard({ trend }: { trend: MultiWindowTrend }) {
   const decimals = trend.unit === 'kcal' || trend.unit === '/day' || trend.unit === 'min' || trend.unit === 'br/min' ? 0 : 1
+  // Shared y-scale across all windows so visual magnitudes are honest.
+  let sparkMin = Infinity, sparkMax = -Infinity
+  for (const row of trend.windows) {
+    for (const v of row.spark) {
+      if (v < sparkMin) sparkMin = v
+      if (v > sparkMax) sparkMax = v
+    }
+  }
   return (
     <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-4">
       <div className="flex items-baseline justify-between mb-1">
@@ -141,7 +149,7 @@ function TrendCard({ trend }: { trend: MultiWindowTrend }) {
                 <span className="text-zinc-600 ml-1">({row.changePercent > 0 ? '+' : ''}{row.changePercent}%)</span>
               </div>
               <div className="flex justify-end">
-                <Sparkline data={row.spark} color={color} height={20} width={88} />
+                <Sparkline data={row.spark} color={color} height={20} width={88} min={sparkMin} max={sparkMax} />
               </div>
             </div>
           )
