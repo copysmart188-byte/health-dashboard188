@@ -5,7 +5,7 @@ import {
 } from 'recharts'
 import type { GpxRoute, GpxPoint, HRSample, HealthData } from './types'
 import 'leaflet/dist/leaflet.css'
-import { StatBox, AISummaryButton, TabHeader, useChartTheme, ChartTooltip } from './ui'
+import { StatBox, AISummaryButton, useChartTheme, ChartTooltip } from './ui'
 import StrengthOverview, { SessionDetail, bestE1RMForExercise, ageFromDob } from './Strength'
 import type { HevyWorkout } from './types'
 
@@ -469,8 +469,6 @@ export default function TrainingViewer({ data, hevy }: Props) {
 
   return (
     <>
-      <TabHeader title="Trainings" description="Detailed workout sessions with GPS routes, heart rate, and — when matched against Hevy — full strength training detail (exercises, sets, reps, RPE)." />
-
       {hevy && hevy.length > 0 && (
         <div className="mb-6 space-y-4">
           <StrengthOverview data={data} hevy={hevy} />

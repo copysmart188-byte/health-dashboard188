@@ -55,6 +55,94 @@ export function computeTrends(metrics: DailyMetrics[], days = 30): TrendInsight[
   return insights.sort((a, b) => b.changePercent - a.changePercent)
 }
 
+// === Multi-window trend detection ===
+// For each metric and each window N (in days), compares avg(last N) vs avg(prior N)
+// and returns the change + a sparkline of the recent window.
+export interface MultiWindowInput {
+  metric: string
+  unit: string
+  higherIsGood: boolean
+  category: 'cardio' | 'sleep' | 'body' | 'activity' | 'breathing'
+  data: { date: string; value: number | null }[]
+}
+
+export interface MultiWindowRow {
+  days: number
+  recent: number
+  previous: number
+  delta: number
+  changePercent: number
+  direction: 'up' | 'down' | 'flat'
+  positive: boolean
+  spark: number[]
+}
+
+export interface MultiWindowTrend {
+  metric: string
+  unit: string
+  higherIsGood: boolean
+  category: MultiWindowInput['category']
+  latest: number | null
+  windows: MultiWindowRow[]
+}
+
+export function computeMultiWindowTrends(
+  inputs: MultiWindowInput[],
+  windows: number[] = [7, 14, 30],
+): MultiWindowTrend[] {
+  const out: MultiWindowTrend[] = []
+  for (const { metric, unit, higherIsGood, category, data } of inputs) {
+    const sorted = [...data]
+      .filter(d => d.value !== null && Number.isFinite(d.value) && (d.value as number) > 0)
+      .sort((a, b) => a.date.localeCompare(b.date))
+    if (sorted.length === 0) continue
+
+    const values = sorted.map(d => d.value as number)
+    const latest = values[values.length - 1]
+    const rows: MultiWindowRow[] = []
+
+    for (const N of windows) {
+      if (values.length < N + 1) continue
+      const recentSlice = values.slice(-N)
+      const prevSlice = values.slice(-N * 2, -N)
+      const minSamples = Math.max(3, Math.floor(N / 2))
+      if (recentSlice.length < minSamples || prevSlice.length < minSamples) continue
+
+      const recent = recentSlice.reduce((a, b) => a + b, 0) / recentSlice.length
+      const previous = prevSlice.reduce((a, b) => a + b, 0) / prevSlice.length
+      if (previous === 0) continue
+
+      const delta = recent - previous
+      const changePercent = (delta / previous) * 100
+      const direction: 'up' | 'down' | 'flat' =
+        Math.abs(changePercent) < 1 ? 'flat' : changePercent > 0 ? 'up' : 'down'
+      const positive =
+        direction === 'flat' ? true : higherIsGood ? direction === 'up' : direction === 'down'
+
+      rows.push({
+        days: N,
+        recent: Math.round(recent * 100) / 100,
+        previous: Math.round(previous * 100) / 100,
+        delta: Math.round(delta * 100) / 100,
+        changePercent: Math.round(changePercent * 10) / 10,
+        direction,
+        positive,
+        spark: recentSlice.slice(),
+      })
+    }
+
+    // Skip metrics with no usable window
+    if (rows.length === 0) continue
+
+    out.push({
+      metric, unit, higherIsGood, category,
+      latest: Math.round(latest * 100) / 100,
+      windows: rows,
+    })
+  }
+  return out
+}
+
 export interface ExtraTrendInput {
   metric: string
   unit: string

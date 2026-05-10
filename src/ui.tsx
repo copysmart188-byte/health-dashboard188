@@ -122,12 +122,15 @@ export function ChartTooltip({ active, payload, label, formatter }: {
 }
 
 // === Sparkline ===
-function Sparkline({ data, color, height = 24 }: { data: number[]; color?: string; height?: number }) {
+export function Sparkline({ data, color, height = 24, width = 80, fluid = false, showEndDot = true, min: minOverride, max: maxOverride }: {
+  data: number[]; color?: string; height?: number; width?: number; fluid?: boolean; showEndDot?: boolean
+  min?: number; max?: number
+}) {
   if (data.length < 2) return null
-  const min = Math.min(...data)
-  const max = Math.max(...data)
+  const min = minOverride ?? Math.min(...data)
+  const max = maxOverride ?? Math.max(...data)
   const range = max - min || 1
-  const w = 80
+  const w = width
   const h = height
   const pad = 2
   const points = data.map((v, i) => {
@@ -136,50 +139,67 @@ function Sparkline({ data, color, height = 24 }: { data: number[]; color?: strin
     return `${x},${y}`
   }).join(' ')
   const c = color || '#71717a'
-  // Fill area
   const fillPoints = `0,${h} ${points} ${w},${h}`
+  const svgProps = fluid
+    ? { width: '100%' as const, height: h, preserveAspectRatio: 'none' as const, className: 'block' }
+    : { width: w, height: h, className: 'overflow-visible' }
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="overflow-visible">
-      <polygon points={fillPoints} fill={c} fillOpacity={0.1} />
-      <polyline points={points} fill="none" stroke={c} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-      {/* End dot */}
-      {data.length > 0 && (() => {
-        const lastX = w
+    <svg {...svgProps} viewBox={`0 0 ${w} ${h}`}>
+      <polygon points={fillPoints} fill={c} fillOpacity={0.15} />
+      <polyline points={points} fill="none" stroke={c} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      {showEndDot && !fluid && (() => {
         const lastY = pad + (1 - (data[data.length - 1] - min) / range) * (h - pad * 2)
-        return <circle cx={lastX} cy={lastY} r={2} fill={c} />
+        return <circle cx={w} cy={lastY} r={2} fill={c} />
       })()}
     </svg>
   )
 }
 
 // === Shared components ===
-export function StatBox({ label, value, unit, sub, color, trend, sparkData }: {
-  label: string; value: string; unit?: string; sub?: string; color?: string
+export function StatBox({ label, value, unit, sub, latest, color, trend, sparkData, icon }: {
+  label: string; value: string; unit?: string; sub?: string; latest?: string; color?: string
   trend?: { direction: 'up' | 'down'; positive: boolean; changePercent: number }
   sparkData?: number[]
+  icon?: ReactNode
 }) {
+  const accent = color || '#71717a'
+  const hasSpark = !!(sparkData && sparkData.length >= 3)
   return (
-    <div className="bg-zinc-900 rounded-xl p-4 transition-colors hover:bg-zinc-800/40">
-      <div className="text-[11px] font-medium tracking-wider uppercase text-zinc-500 mb-1.5">{label}</div>
+    <div className="rounded-xl border border-zinc-800/60 p-4 flex flex-col gap-3 min-h-[140px]">
+      <div className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-300">
+        {icon ? (
+          <span className="shrink-0" style={{ color: accent }}>{icon}</span>
+        ) : (
+          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: accent }} />
+        )}
+        <span className="truncate">{label}</span>
+      </div>
+      {hasSpark ? (
+        <div className="flex-1 -mx-1">
+          <Sparkline data={sparkData!} color={accent} height={36} fluid showEndDot={false} />
+        </div>
+      ) : <div className="flex-1" />}
       <div className="flex items-end justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-[26px] font-semibold tracking-tight tabular-nums leading-none">
-            <span style={{ color }}>{value}</span>
-            {unit && <span className="text-[13px] text-zinc-500 ml-1 font-normal tabular-nums">{unit}</span>}
+          <div className="text-[24px] font-semibold tracking-tight tabular-nums leading-none text-zinc-100">
+            {value}
+            {unit && <span className="text-[12px] text-zinc-500 ml-1 font-normal tabular-nums">{unit}</span>}
           </div>
           {trend ? (
-            <div className={`text-[11px] mt-2 font-medium tabular-nums inline-flex items-center gap-0.5 ${trend.positive ? 'text-green-400' : 'text-red-400'}`}>
+            <div className={`text-[11px] mt-1.5 font-medium tabular-nums inline-flex items-center gap-0.5 ${trend.positive ? 'text-green-400' : 'text-red-400'}`}>
               {trend.direction === 'up' ? <ArrowUpRight size={11} strokeWidth={2.5} /> : <ArrowDownRight size={11} strokeWidth={2.5} />}
               {trend.changePercent}%
               <span className="text-zinc-600 font-normal ml-1">30d</span>
             </div>
           ) : (
-            sub && <div className="text-zinc-500 text-[11px] mt-2 tabular-nums">{sub}</div>
+            (sub || latest) && (
+              <div className="text-zinc-500 text-[10px] mt-1.5 tabular-nums uppercase tracking-wider">
+                {sub}
+                {latest && <span className="text-zinc-400">{sub ? ' · ' : ''}LATEST {latest}</span>}
+              </div>
+            )
           )}
         </div>
-        {sparkData && sparkData.length >= 3 && (
-          <Sparkline data={sparkData} color={color || (trend?.positive ? '#22c55e' : trend ? '#ef4444' : undefined)} />
-        )}
       </div>
     </div>
   )
@@ -409,15 +429,25 @@ export function AISummaryButton({ title, description, chartData }: {
   )
 }
 
-export const ChartCard = memo(function ChartCard({ title, description, tall, chartData, children }: {
-  title: string; description?: string; tall?: boolean; chartData?: unknown[]; children: React.ReactNode
+export const ChartCard = memo(function ChartCard({ title, description, tall, chartData, icon, color, children }: {
+  title: string; description?: string; tall?: boolean; chartData?: unknown[]
+  icon?: ReactNode; color?: string
+  children: React.ReactNode
 }) {
+  const accent = color || '#71717a'
   return (
-    <div className="bg-zinc-900 rounded-xl p-4 transition-colors duration-150 hover:bg-zinc-800/40">
-      <div className="flex items-start justify-between mb-1">
-        <div>
-          <h3 className="text-sm font-medium text-zinc-300">{title}</h3>
-          {description && <p className="text-xs text-zinc-500 mt-0.5">{description}</p>}
+    <div className="rounded-xl border border-zinc-800/60 p-4">
+      <div className="flex items-start justify-between mb-3 gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-300">
+            {icon ? (
+              <span className="shrink-0" style={{ color: accent }}>{icon}</span>
+            ) : (
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: accent }} />
+            )}
+            <span className="truncate">{title}</span>
+          </div>
+          {description && <p className="text-[10px] text-zinc-500 mt-1 uppercase tracking-wider">{description}</p>}
         </div>
         {chartData && chartData.length > 0 && (
           <AISummaryButton title={title} description={description} chartData={chartData} />
@@ -449,6 +479,17 @@ export function SectionHeader({ children }: { children: string }) {
     <h2 className="text-[11px] font-medium tracking-wider uppercase text-zinc-600">
       {children}
     </h2>
+  )
+}
+
+export function SubsectionHeader({ title, description }: { title: string; description?: string }) {
+  return (
+    <div>
+      <h2 className="text-[22px] font-semibold text-zinc-100 tracking-tight">{title}</h2>
+      {description && (
+        <p className="text-xs text-zinc-500 mt-1 leading-relaxed">{description}</p>
+      )}
+    </div>
   )
 }
 
